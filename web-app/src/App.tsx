@@ -15,6 +15,7 @@ import { clearAllDB } from './db/operations';
 import { sliceAudio } from './utils/audioSlicer';
 import { LevelMeter } from './components/LevelMeter';
 import { WaveformViewer } from './components/WaveformViewer';
+import { AuthButton } from './components/AuthButton';
 import type { ExportData } from './types';
 
 type AppView = 'pads' | 'samples' | 'seq';
@@ -160,8 +161,9 @@ export function App() {
             <span className="logo-name">naad</span>
             <span className="logo-tag">/ sampler</span>
           </div>
-          <span className="phase-badge">phase 3</span>
         </div>
+
+        <AuthButton />
 
         {/* Tab bar — only shown when samples are ready */}
         {hasSamples && (

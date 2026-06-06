@@ -1135,3 +1135,155 @@ kbd {
   gap: 10px;
   width: 100%;
 }
+
+/* ─── Auth / Google Sign-In (extension) ─────────────────────────────────── */
+
+.ext-auth {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* Signed-in bar */
+.ext-auth-signed-in {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 10px;
+}
+
+.ext-auth-avatar {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.ext-auth-initials {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.ext-auth-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.ext-auth-name {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ext-auth-social {
+  font-size: 0.68rem;
+  color: var(--accent);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ext-auth-actions { display: flex; gap: 4px; flex-shrink: 0; }
+
+.ext-auth-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: 5px;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+.ext-auth-btn:hover { background: rgba(255,255,255,0.06); color: var(--text); }
+.ext-auth-btn--logout:hover { color: #f87171; }
+
+/* Sign-in button */
+.ext-auth-signin-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 7px 12px;
+  color: var(--text);
+  font-size: 0.78rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  width: 100%;
+  justify-content: center;
+}
+.ext-auth-signin-btn:hover { background: rgba(255,255,255,0.06); border-color: var(--accent); }
+
+/* Profile form */
+.ext-auth-form {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ext-auth-form-title {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text);
+  margin: 0;
+}
+
+.ext-auth-form-subtitle {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  margin: -4px 0 0;
+}
+
+.ext-auth-input {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 7px 10px;
+  color: var(--text);
+  font-size: 0.82rem;
+  outline: none;
+  width: 100%;
+  box-sizing: border-box;
+  transition: border-color 0.2s;
+}
+.ext-auth-input:focus { border-color: var(--accent); }
+.ext-auth-input::placeholder { color: var(--text-muted); opacity: 0.6; }
+
+.ext-auth-error {
+  font-size: 0.72rem;
+  color: #f87171;
+  margin: 0;
+}
+
+.ext-auth-form-btns { display: flex; gap: 6px; }
+.ext-auth-form-btns .btn { flex: 1; }

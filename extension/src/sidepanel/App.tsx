@@ -13,6 +13,7 @@ import { useDBPersistence } from './hooks/useDBPersistence';
 import { clearAllDB } from './db/operations';
 import { sliceAudio } from './utils/audioSlicer';
 import { LevelMeter } from './components/LevelMeter';
+import { AuthPanel } from './components/AuthPanel';
 import type { ExportData } from './types';
 
 const MIME_TYPES = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus'];
@@ -208,6 +209,8 @@ export function App() {
           <span className="logo-name">naad</span>
           <span className="logo-tag">/ sampler</span>
         </div>
+
+        <AuthPanel />
 
         {hasSamples ? (
           <div className="tab-bar">
