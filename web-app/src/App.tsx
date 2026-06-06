@@ -52,6 +52,7 @@ export function App() {
     startFromFile,
     stopRecording,
     addCuePoint,
+    primeCtx,
     cleanup,
     analyserNode,
   } = useAudioRecorder();
@@ -233,7 +234,7 @@ export function App() {
                   <div className="divider"><span>or</span></div>
                   <div className="source-section">
                     <p className="source-label">FROM FILE</p>
-                    <button className="btn btn--secondary" onClick={() => fileInputRef.current?.click()}>
+                    <button className="btn btn--secondary" onClick={() => { primeCtx(); fileInputRef.current?.click(); }}>
                       <span className="btn-icon">↑</span> Load Audio File
                     </button>
                     <input ref={fileInputRef} type="file" accept="audio/*" style={{ display: 'none' }} onChange={handleFileChange} />

@@ -66,7 +66,7 @@ export function useAudioRecorder() {
 
   // ── Internal: attach MediaStream to MediaRecorder ─────────────────────────
   const startFromStream = useCallback(
-    (stream: MediaStream) => {
+    (stream: MediaStream, onStop?: () => void) => {
       streamRef.current = stream;
       chunksRef.current = [];
 
@@ -81,6 +81,7 @@ export function useAudioRecorder() {
         const blob = new Blob(chunksRef.current, { type: mimeType || 'audio/webm' });
         setAudioBlob(blob, mimeType);
         stream.getTracks().forEach((t) => t.stop());
+        onStop?.(); // e.g. stop rawStream video tracks from getDisplayMedia
         streamRef.current = null;
         closeAudioCtx();
       };
@@ -130,19 +131,22 @@ export function useAudioRecorder() {
         selfBrowserSurface: 'exclude',
       });
 
-      // Drop video — we only need audio
-      rawStream.getVideoTracks().forEach((t) => t.stop());
-
+      // ⚠️  Do NOT call rawStream.getVideoTracks().forEach(t => t.stop()) here.
+      //    In Chrome, stopping the video track of a getDisplayMedia stream
+      //    terminates the entire capture session — audio tracks are ended too,
+      //    so no audio ever flows through the AudioContext. We keep the tiny
+      //    1×1 video track alive and stop ALL rawStream tracks on cleanup.
       const audioTracks = rawStream.getAudioTracks();
       if (audioTracks.length === 0) {
+        rawStream.getTracks().forEach((t) => t.stop()); // clean up before throw
         throw new Error(
           'No audio track received. Make sure you checked "Share tab audio" in the picker.'
         );
       }
 
       // ── Route: captured stream → speakers AND recorder ────────────────────
-      const src     = ctx.createMediaStreamSource(new MediaStream(audioTracks));
-      const dest    = ctx.createMediaStreamDestination();
+      const src      = ctx.createMediaStreamSource(new MediaStream(audioTracks));
+      const dest     = ctx.createMediaStreamDestination();
       const analyser = ctx.createAnalyser();
       analyser.fftSize = 256;
 
@@ -155,7 +159,8 @@ export function useAudioRecorder() {
       // If the user clicks "Stop sharing" in the browser chrome, stop recording
       audioTracks[0].addEventListener('ended', () => stopRef.current(), { once: true });
 
-      startFromStream(dest.stream);
+      // Stop ALL rawStream tracks (incl. the video track) when recording ends
+      startFromStream(dest.stream, () => rawStream.getTracks().forEach((t) => t.stop()));
     } catch (err) {
       closeAudioCtx();
       setState('idle');
@@ -167,6 +172,23 @@ export function useAudioRecorder() {
     }
   }, [setState, setError, startFromStream, closeAudioCtx]);
 
+  // ── Prime AudioContext on button click (before file picker opens) ─────────
+  // Call this synchronously in the onClick handler of the "Load Audio File"
+  // button. By the time onChange fires from the file picker, the AudioContext
+  // is already running and startFromFile can skip the ctx.resume() await,
+  // sidestepping any question of whether the file-input change event carries
+  // a fresh user-gesture token in the current Chrome version.
+  const primeCtx = useCallback(() => {
+    const existing = audioCtxRef.current;
+    if (!existing || existing.state === 'closed') {
+      const ctx = new AudioContext({ latencyHint: 'interactive' });
+      audioCtxRef.current = ctx;
+      ctx.resume().catch(() => {});
+    } else if (existing.state === 'suspended') {
+      existing.resume().catch(() => {});
+    }
+  }, []);
+
   // ── Load audio from a file ────────────────────────────────────────────────
   const startFromFile = useCallback(
     async (file: File) => {
@@ -174,12 +196,16 @@ export function useAudioRecorder() {
       setState('requesting');
 
       try {
-        // Resume immediately — while the user-gesture token from the file-picker
-        // click is still valid. Calling resume() after the file.arrayBuffer() /
-        // decodeAudioData awaits loses the token and Chrome blocks audio output.
-        const ctx = new AudioContext({ latencyHint: 'interactive' });
+        // Re-use a context that primeCtx() already resumed (called in the
+        // button onClick). If not pre-primed, create and resume now — the
+        // file-input onChange IS a user-activated event and should still
+        // carry a gesture token in most Chrome versions.
+        const existing = audioCtxRef.current;
+        const ctx = (existing && existing.state !== 'closed')
+          ? existing
+          : new AudioContext({ latencyHint: 'interactive' });
         audioCtxRef.current = ctx;
-        await ctx.resume();
+        if (ctx.state !== 'running') await ctx.resume();
 
         const arrayBuffer = await file.arrayBuffer();
         const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
@@ -227,6 +253,7 @@ export function useAudioRecorder() {
     startFromFile,
     stopRecording,
     addCuePoint,
+    primeCtx,
     cleanup,
     startTimeRef,
     analyserNode,

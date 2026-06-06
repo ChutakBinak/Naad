@@ -58,7 +58,20 @@ export function App() {
   // ── Recording ─────────────────────────────────────────────────────────────
   const startRecording = useCallback(async () => {
     setError(null);
+
+    // ── Create and resume AudioContext as the VERY FIRST await ──────────────
+    // chrome.tabCapture.capture is async; once we cross that await boundary,
+    // Chrome's user-gesture activation token may be expired, and
+    // AudioContext.resume() will silently fail — the captured tab stays muted.
+    // By resuming here (first await, still inside the button-click handler) we
+    // guarantee the context is running before we even request the stream.
+    const monitorCtx = new AudioContext({ latencyHint: 'interactive' });
+    monitorCtxRef.current = monitorCtx;
+    await monitorCtx.resume(); // ← first await: gesture token is still valid
+
     try {
+      // chrome.tabCapture MUTES the captured tab — audio is rerouted through
+      // monitorCtx.destination (already running above) so the user can hear it.
       const stream = await new Promise<MediaStream>((resolve, reject) => {
         chrome.tabCapture.capture({ audio: true, video: false }, (s) => {
           if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
@@ -72,17 +85,12 @@ export function App() {
       const mimeType    = getSupportedMimeType();
       const recorder    = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
 
-      // chrome.tabCapture MUTES the captured tab — its audio no longer plays
-      // through system speakers. We must re-route it via AudioContext.destination
-      // so the user can hear it while placing cue points.
-      const monitorCtx   = new AudioContext({ latencyHint: 'interactive' });
-      await monitorCtx.resume(); // unlock before any await (user-gesture token)
-      const monitorSrc   = monitorCtx.createMediaStreamSource(stream);
-      const analyser     = monitorCtx.createAnalyser();
-      analyser.fftSize   = 256;
+      // monitorCtx is already running — wire the captured stream through it
+      const monitorSrc = monitorCtx.createMediaStreamSource(stream);
+      const analyser   = monitorCtx.createAnalyser();
+      analyser.fftSize = 256;
       monitorSrc.connect(monitorCtx.destination); // restore audible output
       monitorSrc.connect(analyser);               // tap for level meter
-      monitorCtxRef.current = monitorCtx;
       setAnalyserNode(analyser);
 
       recorder.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
@@ -104,6 +112,9 @@ export function App() {
       setElapsed(0);
       timerRef.current = setInterval(() => setElapsed(Date.now() - startTimeRef.current), 50);
     } catch (err) {
+      // Capture failed — close the AudioContext we already created
+      monitorCtx.close().catch(() => {});
+      monitorCtxRef.current = null;
       setError(err instanceof Error ? err.message : 'Failed to capture audio');
     }
   }, [setState, setElapsed, setAudioBlob, setError]);
