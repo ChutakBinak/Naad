@@ -57,16 +57,24 @@ export function Pad({ pad, isPlaying, isSelected, onTrigger, onEdit }: PadProps)
       {/* Key label */}
       <span className="pad-key">{pad.keyLabel}</span>
 
-      {/* Gear button — only on filled pads */}
+      {/* Gear — must NOT be a <button> inside a <button> (invalid HTML breaks clicks) */}
       {!isEmpty && (
-        <button
+        <span
+          role="button"
+          tabIndex={0}
           className={`pad-gear ${hasCustomSettings ? 'pad-gear--active' : ''}`}
           onClick={handleGear}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              onEdit(pad);
+            }
+          }}
           aria-label={`Edit ${pad.sample!.label} settings`}
           title="Edit pad settings"
         >
           ⚙
-        </button>
+        </span>
       )}
 
       {isEmpty ? (

@@ -66,8 +66,12 @@ export function PadGrid({ samples }: PadGridProps) {
   // ── Keyboard ──────────────────────────────────────────────────────────────
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      const tag = (e.target as HTMLElement).tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || e.repeat) return;
+      const el  = e.target as HTMLElement;
+      const tag = el.tagName;
+      // Block text inputs and textareas, but allow range sliders (type="range")
+      // so Q/W/E still trigger pads while a slider is focused.
+      const isTextInput = tag === 'TEXTAREA' || (tag === 'INPUT' && (el as HTMLInputElement).type !== 'range');
+      if (isTextInput || e.repeat) return;
       const idx = KEY_MAP[e.key.toLowerCase()];
       if (idx === undefined) return;
       const pad = pads[idx];
