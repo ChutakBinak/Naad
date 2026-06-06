@@ -56,7 +56,9 @@ export function usePadPlayer() {
       const settings = getSettings(padId);
       const master   = masterGainRef.current!;
 
-      if (ctx.state === 'suspended') ctx.resume();
+      // Always call resume — it's a no-op when already running and ensures
+      // the context is unblocked on the very first user gesture.
+      ctx.resume().catch(() => {});
 
       // Stop existing node (retrigger)
       const existing = activePads.current.get(padId);
@@ -131,10 +133,12 @@ export function usePadPlayer() {
   }, [clearAllPlaying]);
 
   // ── Performance recording ─────────────────────────────────────────────────
-  const startCapture = useCallback(async () => {
+  // NOT async — keeping this synchronous preserves the browser's user-gesture
+  // token so ctx.resume() is granted. An async boundary can silently drop it.
+  const startCapture = useCallback(() => {
     const ctx    = getCtx();
     const master = masterGainRef.current!;
-    if (ctx.state === 'suspended') await ctx.resume();
+    ctx.resume().catch(() => {}); // fire-and-forget; pad triggers will re-resume if needed
 
     const dest  = ctx.createMediaStreamDestination();
     master.connect(dest);

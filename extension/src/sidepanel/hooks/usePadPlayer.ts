@@ -49,7 +49,7 @@ export function usePadPlayer() {
     const ctx      = getCtx();
     const settings = getSettings(padId);
     const master   = masterGainRef.current!;
-    if (ctx.state === 'suspended') ctx.resume();
+    ctx.resume().catch(() => {}); // always call — no-op if already running
 
     const existing = activePads.current.get(padId);
     if (existing) {
@@ -95,10 +95,11 @@ export function usePadPlayer() {
   }, [clearAllPlaying]);
 
   // ── Performance recording ─────────────────────────────────────────────────
-  const startCapture = useCallback(async () => {
+  // NOT async — keeps the browser's user-gesture token alive for ctx.resume().
+  const startCapture = useCallback(() => {
     const ctx    = getCtx();
     const master = masterGainRef.current!;
-    if (ctx.state === 'suspended') await ctx.resume();
+    ctx.resume().catch(() => {});
 
     const dest = ctx.createMediaStreamDestination();
     master.connect(dest);
