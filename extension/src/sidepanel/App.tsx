@@ -72,14 +72,16 @@ export function App() {
       const mimeType    = getSupportedMimeType();
       const recorder    = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
 
-      // Tap an AnalyserNode off the capture stream for the level meter.
-      // We do NOT connect to monitorCtx.destination — the tab audio already
-      // plays normally through the system; connecting again would double it.
+      // chrome.tabCapture MUTES the captured tab — its audio no longer plays
+      // through system speakers. We must re-route it via AudioContext.destination
+      // so the user can hear it while placing cue points.
       const monitorCtx   = new AudioContext({ latencyHint: 'interactive' });
+      await monitorCtx.resume(); // unlock before any await (user-gesture token)
       const monitorSrc   = monitorCtx.createMediaStreamSource(stream);
       const analyser     = monitorCtx.createAnalyser();
       analyser.fftSize   = 256;
-      monitorSrc.connect(analyser);
+      monitorSrc.connect(monitorCtx.destination); // restore audible output
+      monitorSrc.connect(analyser);               // tap for level meter
       monitorCtxRef.current = monitorCtx;
       setAnalyserNode(analyser);
 

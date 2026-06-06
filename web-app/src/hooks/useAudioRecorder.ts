@@ -104,6 +104,13 @@ export function useAudioRecorder() {
     setError(null);
     setState('requesting');
 
+    // Create and resume the AudioContext immediately — while we still have the
+    // user-gesture token from the button click. If we create it after the
+    // getDisplayMedia await Chrome may block audio output (autoplay policy).
+    const ctx = new AudioContext({ latencyHint: 'interactive' });
+    audioCtxRef.current = ctx;
+    await ctx.resume();
+
     try {
       const rawStream = await navigator.mediaDevices.getDisplayMedia({
         video: {
@@ -134,9 +141,6 @@ export function useAudioRecorder() {
       }
 
       // ── Route: captured stream → speakers AND recorder ────────────────────
-      const ctx  = new AudioContext({ latencyHint: 'interactive' });
-      audioCtxRef.current = ctx;
-
       const src     = ctx.createMediaStreamSource(new MediaStream(audioTracks));
       const dest    = ctx.createMediaStreamDestination();
       const analyser = ctx.createAnalyser();
@@ -152,8 +156,6 @@ export function useAudioRecorder() {
       audioTracks[0].addEventListener('ended', () => stopRef.current(), { once: true });
 
       startFromStream(dest.stream);
-
-      if (ctx.state === 'suspended') await ctx.resume();
     } catch (err) {
       closeAudioCtx();
       setState('idle');
@@ -172,8 +174,12 @@ export function useAudioRecorder() {
       setState('requesting');
 
       try {
+        // Resume immediately — while the user-gesture token from the file-picker
+        // click is still valid. Calling resume() after the file.arrayBuffer() /
+        // decodeAudioData awaits loses the token and Chrome blocks audio output.
         const ctx = new AudioContext({ latencyHint: 'interactive' });
         audioCtxRef.current = ctx;
+        await ctx.resume();
 
         const arrayBuffer = await file.arrayBuffer();
         const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
@@ -191,7 +197,6 @@ export function useAudioRecorder() {
         setAnalyserNode(analyser);
 
         startFromStream(dest.stream);
-        if (ctx.state === 'suspended') await ctx.resume();
         src.start(0);
 
         // Auto-stop when the file finishes
