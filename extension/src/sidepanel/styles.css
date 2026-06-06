@@ -1070,3 +1070,37 @@ kbd {
   color: var(--accent);
   opacity: 0.6;
 }
+
+/* ─── Phase 7: Level Meter ────────────────────────────────────────────────── */
+
+.level-meter-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 0 4px;
+}
+
+.lm-label {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--danger);
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+
+.lm-canvas {
+  display: block;
+  flex: 1;
+  border-radius: 2px;
+}
+
+/* Extension recording controls: meter stacked above buttons */
+.controls-recording {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}

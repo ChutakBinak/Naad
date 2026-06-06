@@ -12,6 +12,7 @@ import { useSequencerStore } from './store/sequencerStore';
 import { useDBPersistence } from './hooks/useDBPersistence';
 import { clearAllDB } from './db/operations';
 import { sliceAudio } from './utils/audioSlicer';
+import { LevelMeter } from './components/LevelMeter';
 import type { ExportData } from './types';
 
 const MIME_TYPES = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus'];
@@ -48,6 +49,8 @@ export function App() {
   const timerRef         = useRef<ReturnType<typeof setInterval> | null>(null);
   const streamRef        = useRef<MediaStream | null>(null);
   const blobRef          = useRef<Blob | null>(null);
+  const monitorCtxRef    = useRef<AudioContext | null>(null);
+  const [analyserNode, setAnalyserNode] = useState<AnalyserNode | null>(null);
 
   // Auto-switch to pads when samples arrive
   useEffect(() => { if (samples.length > 0) setView('pads'); }, [samples.length]);
@@ -69,6 +72,17 @@ export function App() {
       const mimeType    = getSupportedMimeType();
       const recorder    = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
 
+      // Tap an AnalyserNode off the capture stream for the level meter.
+      // We do NOT connect to monitorCtx.destination — the tab audio already
+      // plays normally through the system; connecting again would double it.
+      const monitorCtx   = new AudioContext({ latencyHint: 'interactive' });
+      const monitorSrc   = monitorCtx.createMediaStreamSource(stream);
+      const analyser     = monitorCtx.createAnalyser();
+      analyser.fftSize   = 256;
+      monitorSrc.connect(analyser);
+      monitorCtxRef.current = monitorCtx;
+      setAnalyserNode(analyser);
+
       recorder.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
       recorder.onstop = () => {
         const blob = new Blob(chunksRef.current, { type: mimeType || 'audio/webm' });
@@ -76,6 +90,9 @@ export function App() {
         setAudioBlob(blob);
         stream.getTracks().forEach((t) => t.stop());
         streamRef.current = null;
+        monitorCtxRef.current?.close().catch(() => {});
+        monitorCtxRef.current = null;
+        setAnalyserNode(null);
       };
 
       recorder.start(100);
@@ -114,6 +131,7 @@ export function App() {
   useEffect(() => () => {
     if (timerRef.current) clearInterval(timerRef.current);
     streamRef.current?.getTracks().forEach((t) => t.stop());
+    monitorCtxRef.current?.close().catch(() => {});
   }, []);
 
   // ── Slice ─────────────────────────────────────────────────────────────────
@@ -223,6 +241,7 @@ export function App() {
 
               {state === 'recording' && (
                 <div className="controls-recording">
+                  <LevelMeter analyserNode={analyserNode} />
                   <button className="btn btn--cue" onClick={handleCue}>
                     <span className="btn-icon">◆</span> Cue <kbd>Space</kbd>
                   </button>

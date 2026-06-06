@@ -13,6 +13,8 @@ import { useAudioRecorder } from './hooks/useAudioRecorder';
 import { useDBPersistence } from './hooks/useDBPersistence';
 import { clearAllDB } from './db/operations';
 import { sliceAudio } from './utils/audioSlicer';
+import { LevelMeter } from './components/LevelMeter';
+import { WaveformViewer } from './components/WaveformViewer';
 import type { ExportData } from './types';
 
 type AppView = 'pads' | 'samples' | 'seq';
@@ -51,6 +53,7 @@ export function App() {
     stopRecording,
     addCuePoint,
     cleanup,
+    analyserNode,
   } = useAudioRecorder();
 
   const { isHydrating } = useDBPersistence();
@@ -248,22 +251,22 @@ export function App() {
 
               {state === 'recording' && (
                 <div className="recording-controls">
-                  <button className="btn btn--cue" onClick={addCuePoint} aria-label="Mark cue point (Space)">
-                    <span className="btn-icon">◆</span> Cue <kbd>Space</kbd>
-                  </button>
-                  <button className="btn btn--stop" onClick={stopRecording} aria-label="Stop">
-                    <span className="btn-icon">■</span> Stop
-                  </button>
+                  <LevelMeter analyserNode={analyserNode} />
+                  <div className="recording-btns">
+                    <button className="btn btn--cue" onClick={addCuePoint} aria-label="Mark cue point (Space)">
+                      <span className="btn-icon">◆</span> Cue <kbd>Space</kbd>
+                    </button>
+                    <button className="btn btn--stop" onClick={stopRecording} aria-label="Stop">
+                      <span className="btn-icon">■</span> Stop
+                    </button>
+                  </div>
                 </div>
               )}
 
               {state === 'stopped' && (
                 <div className="stopped-controls">
-                  {audioUrl && (
-                    <div className="playback">
-                      <p className="playback-label">PREVIEW</p>
-                      <audio controls src={audioUrl} className="audio-player" />
-                    </div>
+                  {audioBlob && (
+                    <WaveformViewer audioBlob={audioBlob} cuePoints={cuePoints} />
                   )}
 
                   {isSlicing ? (

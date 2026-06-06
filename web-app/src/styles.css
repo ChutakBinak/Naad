@@ -1519,3 +1519,174 @@ kbd {
   .cue-item { padding: 8px 10px; }
   .cue-timestamp { font-size: 14px; }
 }
+
+/* ─── Phase 7: Level Meter ────────────────────────────────────────────────── */
+
+.level-meter-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+
+.lm-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--danger);
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+
+.lm-canvas {
+  display: block;
+  flex: 1;
+  max-width: 240px;
+  border-radius: 3px;
+}
+
+/* Recording controls layout (Level meter + buttons) */
+.recording-controls {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+}
+
+.recording-btns {
+  display: flex;
+  gap: 12px;
+}
+
+/* ─── Phase 7: Waveform Viewer ───────────────────────────────────────────── */
+
+.waveform-viewer {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+}
+
+/* Container that WaveSurfer renders into, with the overlay on top */
+.waveform-wrap {
+  position: relative;
+  width: 100%;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: #0a0e16;
+  border: 1px solid var(--border);
+}
+
+/* The div WaveSurfer mounts its canvas into */
+.waveform-canvas {
+  width: 100%;
+  display: block;
+}
+
+/* Transparent overlay for cue markers + region tints */
+.waveform-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* Coloured slice-region bands */
+.waveform-region {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+}
+
+/* Vertical cue-point line + numbered badge */
+.waveform-cue-marker {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  transform: translateX(-50%);
+}
+
+.wcm-line {
+  flex: 1;
+  width: 2px;
+  background: var(--accent);
+  opacity: 0.85;
+}
+
+.wcm-badge {
+  position: absolute;
+  top: 4px;
+  font-size: 9px;
+  font-weight: 800;
+  background: var(--accent);
+  color: #000;
+  padding: 1px 4px;
+  border-radius: 3px;
+  white-space: nowrap;
+  line-height: 1.4;
+}
+
+/* Loading skeleton shown while WaveSurfer decodes the blob */
+.waveform-loading {
+  height: 88px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 16px;
+}
+
+.wl-pulse {
+  width: 100%;
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--bg-3) 25%, var(--bg-4) 50%, var(--bg-3) 75%);
+  background-size: 200% 100%;
+  animation: wl-shimmer 1.4s infinite linear;
+}
+
+@keyframes wl-shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* Controls row below the waveform */
+.waveform-footer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.wf-play-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1px solid var(--border-mid);
+  background: var(--bg-3);
+  color: var(--text-0);
+  font-size: 13px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+  flex-shrink: 0;
+}
+
+.wf-play-btn:hover:not(:disabled) { background: var(--bg-4); }
+.wf-play-btn:disabled { opacity: 0.4; cursor: default; }
+
+.wf-info {
+  font-size: 11px;
+  color: var(--text-1);
+}
+
+/* ─── Mobile tweaks for Phase 7 ──────────────────────────────────────────── */
+
+@media (max-width: 600px) {
+  .lm-canvas { max-width: 180px; }
+  .recording-btns { flex-direction: column; width: 100%; }
+  .recording-btns .btn { width: 100%; }
+}

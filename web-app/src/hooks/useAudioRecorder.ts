@@ -1,4 +1,4 @@
-import { useRef, useCallback } from 'react';
+import { useRef, useCallback, useState } from 'react';
 import { useRecordingStore } from '../store/recordingStore';
 
 const MIME_TYPES = [
@@ -37,9 +37,11 @@ export function useAudioRecorder() {
   const timerRef         = useRef<ReturnType<typeof setInterval> | null>(null);
   const streamRef        = useRef<MediaStream | null>(null);
   const audioCtxRef      = useRef<AudioContext | null>(null);
+  const [analyserNode, setAnalyserNode] = useState<AnalyserNode | null>(null);
 
   // ── Close routing AudioContext ────────────────────────────────────────────
   const closeAudioCtx = useCallback(() => {
+    setAnalyserNode(null);
     if (audioCtxRef.current) {
       audioCtxRef.current.close().catch(() => {});
       audioCtxRef.current = null;
@@ -135,11 +137,16 @@ export function useAudioRecorder() {
       const ctx  = new AudioContext({ latencyHint: 'interactive' });
       audioCtxRef.current = ctx;
 
-      const src  = ctx.createMediaStreamSource(new MediaStream(audioTracks));
-      const dest = ctx.createMediaStreamDestination();
+      const src     = ctx.createMediaStreamSource(new MediaStream(audioTracks));
+      const dest    = ctx.createMediaStreamDestination();
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 256;
 
       src.connect(ctx.destination); // playback — user hears the capture
       src.connect(dest);             // feed into MediaRecorder
+      src.connect(analyser);         // tap for level meter
+
+      setAnalyserNode(analyser);
 
       // If the user clicks "Stop sharing" in the browser chrome, stop recording
       audioTracks[0].addEventListener('ended', () => stopRef.current(), { once: true });
@@ -171,12 +178,17 @@ export function useAudioRecorder() {
         const arrayBuffer = await file.arrayBuffer();
         const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
 
-        const src  = ctx.createBufferSource();
-        const dest = ctx.createMediaStreamDestination();
+        const src     = ctx.createBufferSource();
+        const dest    = ctx.createMediaStreamDestination();
+        const analyser = ctx.createAnalyser();
+        analyser.fftSize = 256;
 
         src.buffer = audioBuffer;
         src.connect(ctx.destination); // playback — user hears the file
         src.connect(dest);             // feed into MediaRecorder
+        src.connect(analyser);         // tap for level meter
+
+        setAnalyserNode(analyser);
 
         startFromStream(dest.stream);
         if (ctx.state === 'suspended') await ctx.resume();
@@ -212,5 +224,6 @@ export function useAudioRecorder() {
     addCuePoint,
     cleanup,
     startTimeRef,
+    analyserNode,
   };
 }
