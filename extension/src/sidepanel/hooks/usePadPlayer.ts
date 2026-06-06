@@ -1,26 +1,54 @@
-import { useRef, useCallback, useEffect } from 'react';
+import { useRef, useCallback, useEffect, useState } from 'react';
 import { usePadStore } from '../store/padStore';
 import { usePadSettingsStore, computePlaybackRate } from '../store/padSettingsStore';
 import type { Sample } from '../utils/audioSlicer';
 
 interface ActivePad { source: AudioBufferSourceNode; gain: GainNode; }
 
+const MIME_CANDIDATES = [
+  'audio/webm;codecs=opus',
+  'audio/webm',
+  'audio/ogg;codecs=opus',
+];
+function getSupportedMime() {
+  return MIME_CANDIDATES.find((t) => MediaRecorder.isTypeSupported(t)) ?? '';
+}
+
+/**
+ * Audio graph:
+ *   BufferSource → padGain (ADSR) → masterGain → ctx.destination
+ *                                              ↘ captureDestination (when recording)
+ */
 export function usePadPlayer() {
-  const audioCtxRef = useRef<AudioContext | null>(null);
-  const activePads  = useRef<Map<string, ActivePad>>(new Map());
+  const audioCtxRef   = useRef<AudioContext | null>(null);
+  const masterGainRef = useRef<GainNode | null>(null);
+  const activePads    = useRef<Map<string, ActivePad>>(new Map());
   const { setPadPlaying, clearAllPlaying } = usePadStore();
   const { getSettings }                    = usePadSettingsStore();
 
+  // ── Capture state ─────────────────────────────────────────────────────────
+  const [isCapturing, setIsCapturing]       = useState(false);
+  const recorderRef    = useRef<MediaRecorder | null>(null);
+  const captureDestRef = useRef<MediaStreamAudioDestinationNode | null>(null);
+  const captureChunks  = useRef<Blob[]>([]);
+
+  // ── Shared AudioContext + master gain ─────────────────────────────────────
   const getCtx = useCallback((): AudioContext => {
     if (!audioCtxRef.current || audioCtxRef.current.state === 'closed') {
-      audioCtxRef.current = new AudioContext({ latencyHint: 'interactive' });
+      const ctx    = new AudioContext({ latencyHint: 'interactive' });
+      const master = ctx.createGain();
+      master.connect(ctx.destination);
+      audioCtxRef.current   = ctx;
+      masterGainRef.current = master;
     }
     return audioCtxRef.current;
   }, []);
 
+  // ── Trigger ───────────────────────────────────────────────────────────────
   const triggerSample = useCallback((padId: string, sample: Sample) => {
     const ctx      = getCtx();
     const settings = getSettings(padId);
+    const master   = masterGainRef.current!;
     if (ctx.state === 'suspended') ctx.resume();
 
     const existing = activePads.current.get(padId);
@@ -43,7 +71,8 @@ export function usePadPlayer() {
     const releaseStart     = Math.max(t0 + attack + decay, t0 + adjustedDuration - release);
     gainNode.gain.setValueAtTime(sustain, releaseStart);
     gainNode.gain.linearRampToValueAtTime(0, releaseStart + release);
-    gainNode.connect(ctx.destination);
+
+    gainNode.connect(master); // → masterGain → destination (+ optional captureDestination)
 
     const source = ctx.createBufferSource();
     source.buffer = sample.audioBuffer;
@@ -55,6 +84,7 @@ export function usePadPlayer() {
     setPadPlaying(padId, true);
   }, [getCtx, getSettings, setPadPlaying]);
 
+  // ── Stop everything ───────────────────────────────────────────────────────
   const stopAll = useCallback(() => {
     activePads.current.forEach(({ source, gain }) => {
       gain.gain.cancelScheduledValues(0);
@@ -64,7 +94,54 @@ export function usePadPlayer() {
     clearAllPlaying();
   }, [clearAllPlaying]);
 
-  useEffect(() => () => { stopAll(); audioCtxRef.current?.close(); }, [stopAll]);
+  // ── Performance recording ─────────────────────────────────────────────────
+  const startCapture = useCallback(async () => {
+    const ctx    = getCtx();
+    const master = masterGainRef.current!;
+    if (ctx.state === 'suspended') await ctx.resume();
 
-  return { triggerSample, stopAll };
+    const dest = ctx.createMediaStreamDestination();
+    master.connect(dest);
+    captureDestRef.current = dest;
+    captureChunks.current  = [];
+
+    const mime     = getSupportedMime();
+    const recorder = new MediaRecorder(dest.stream, mime ? { mimeType: mime } : undefined);
+
+    recorder.ondataavailable = (e) => {
+      if (e.data.size > 0) captureChunks.current.push(e.data);
+    };
+    recorder.onstop = () => {
+      const blob = new Blob(captureChunks.current, { type: mime || 'audio/webm' });
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      a.href = url; a.download = `naad-performance-${Date.now()}.webm`; a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      if (captureDestRef.current) {
+        try { master.disconnect(captureDestRef.current); } catch { /* */ }
+        captureDestRef.current = null;
+      }
+    };
+
+    recorder.start(100);
+    recorderRef.current = recorder;
+    setIsCapturing(true);
+  }, [getCtx]);
+
+  const stopCapture = useCallback(() => {
+    if (recorderRef.current && recorderRef.current.state !== 'inactive') {
+      recorderRef.current.stop();
+    }
+    recorderRef.current = null;
+    setIsCapturing(false);
+  }, []);
+
+  // ── Cleanup ───────────────────────────────────────────────────────────────
+  useEffect(() => () => {
+    stopAll();
+    if (recorderRef.current?.state !== 'inactive') recorderRef.current?.stop();
+    audioCtxRef.current?.close();
+  }, [stopAll]);
+
+  return { triggerSample, stopAll, isCapturing, startCapture, stopCapture };
 }

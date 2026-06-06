@@ -23,7 +23,7 @@ interface PadGridProps { samples: Sample[]; onNewRecording: () => void; }
 
 export function PadGrid({ samples, onNewRecording }: PadGridProps) {
   const { currentBank, playingPads, setCurrentBank } = usePadStore();
-  const { triggerSample, stopAll } = usePadPlayer();
+  const { triggerSample, stopAll, isCapturing, startCapture, stopCapture } = usePadPlayer();
   const { getSettings } = usePadSettingsStore();
   const [selectedPad, setSelectedPad] = useState<PadItem | null>(null);
 
@@ -49,7 +49,8 @@ export function PadGrid({ samples, onNewRecording }: PadGridProps) {
     if (pad.sample) triggerSample(pad.id, pad.sample);
   }, [triggerSample]);
 
-  const handleGear = useCallback((pad: PadItem) => {
+  const handleGear = useCallback((pad: PadItem, e: React.MouseEvent) => {
+    e.stopPropagation();
     setSelectedPad((p) => p?.id === pad.id ? null : pad);
   }, []);
 
@@ -59,8 +60,10 @@ export function PadGrid({ samples, onNewRecording }: PadGridProps) {
 
   useEffect(() => {
     const fn = (e: KeyboardEvent) => {
-      const tag = (e.target as HTMLElement).tagName;
-      if (tag === 'INPUT' || tag === 'BUTTON' || e.repeat) return;
+      const el  = e.target as HTMLElement;
+      const tag = el.tagName;
+      const isTextInput = tag === 'TEXTAREA' || (tag === 'INPUT' && (el as HTMLInputElement).type !== 'range');
+      if (isTextInput || e.repeat) return;
       const idx = KEY_MAP[e.key.toLowerCase()];
       if (idx === undefined) return;
       const pad = pads[idx];
@@ -72,6 +75,7 @@ export function PadGrid({ samples, onNewRecording }: PadGridProps) {
 
   return (
     <div className="pad-grid-section">
+      {/* ── Toolbar ── */}
       <div className="pg-toolbar">
         <div className="pg-bank-info">
           <span className="pg-bank-label">BANK</span>
@@ -86,17 +90,31 @@ export function PadGrid({ samples, onNewRecording }: PadGridProps) {
           ))}
           <button className="pg-nav-btn" onClick={() => handleBankChange(safeBank + 1)} disabled={safeBank === banks.length - 1}>›</button>
         </div>
-        <button className="btn btn--reset btn--sm" onClick={onNewRecording}>↺</button>
+
+        <button
+          className={`pg-rec-btn ${isCapturing ? 'pg-rec-btn--active' : ''}`}
+          onClick={isCapturing ? stopCapture : startCapture}
+          title={isCapturing ? 'Stop recording and save' : 'Record performance'}
+          aria-label={isCapturing ? 'Stop recording' : 'Record performance'}
+        >
+          <span className="pg-rec-dot" aria-hidden />
+          {isCapturing ? 'Stop' : 'Rec'}
+        </button>
+
+        <button className="btn btn--reset btn--sm" onClick={onNewRecording} title="New recording">↺</button>
       </div>
 
+      {/* ── 3×3 Grid ── */}
       <div className="pad-grid">
         {pads.map((pad) => {
           const playing  = playingPads.has(pad.id);
           const selected = selectedPad?.id === pad.id;
           const s        = getSettings(pad.id);
-          const custom   = pad.sample && (s.pitch !== DEFAULT_SETTINGS.pitch || s.speed !== DEFAULT_SETTINGS.speed ||
-            s.attack !== DEFAULT_SETTINGS.attack || s.decay !== DEFAULT_SETTINGS.decay ||
-            s.sustain !== DEFAULT_SETTINGS.sustain || s.release !== DEFAULT_SETTINGS.release);
+          const custom   = pad.sample && (
+            s.pitch   !== DEFAULT_SETTINGS.pitch   || s.speed   !== DEFAULT_SETTINGS.speed   ||
+            s.attack  !== DEFAULT_SETTINGS.attack  || s.decay   !== DEFAULT_SETTINGS.decay   ||
+            s.sustain !== DEFAULT_SETTINGS.sustain || s.release !== DEFAULT_SETTINGS.release
+          );
 
           return (
             <button key={pad.id}
@@ -106,24 +124,36 @@ export function PadGrid({ samples, onNewRecording }: PadGridProps) {
               disabled={!pad.sample}
             >
               <span className="pad-key">{pad.keyLabel}</span>
+
+              {/* gear — span not button to avoid invalid nested button */}
               {pad.sample && (
-                <button className={`pad-gear ${custom ? 'pad-gear--active' : ''}`}
-                  onClick={(e) => { e.stopPropagation(); handleGear(pad); }}>
-                  ⚙
-                </button>
+                <span
+                  role="button"
+                  tabIndex={0}
+                  className={`pad-gear ${custom ? 'pad-gear--active' : ''}`}
+                  onClick={(e) => handleGear(pad, e)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelectedPad((p) => p?.id === pad.id ? null : pad); }
+                  }}
+                  aria-label={`Edit ${pad.sample.label} settings`}
+                  title="Edit pad settings"
+                >⚙</span>
               )}
+
               {pad.sample ? (
                 <>
                   <span className="pad-sample-name">{pad.sample.label}</span>
                   <span className="pad-duration">{fmtMs(pad.sample.durationMs)}</span>
                 </>
               ) : <span className="pad-empty-label">—</span>}
+
               {playing && <span className="pad-ring" aria-hidden />}
             </button>
           );
         })}
       </div>
 
+      {/* ── Settings Panel ── */}
       {selectedPad ? (
         <PadSettings
           padId={selectedPad.id}

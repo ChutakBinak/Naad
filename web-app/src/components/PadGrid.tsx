@@ -23,7 +23,7 @@ interface PadGridProps {
 
 export function PadGrid({ samples }: PadGridProps) {
   const { currentBank, playingPads, setCurrentBank } = usePadStore();
-  const { triggerSample, stopAll } = usePadPlayer();
+  const { triggerSample, stopAll, isCapturing, startCapture, stopCapture } = usePadPlayer();
 
   const [selectedPad, setSelectedPad] = useState<PadData | null>(null);
 
@@ -104,6 +104,16 @@ export function PadGrid({ samples }: PadGridProps) {
           <button className="pg-nav-btn" onClick={() => handleBankChange(safeBank + 1)}
             disabled={safeBank === banks.length - 1} aria-label="Next bank">›</button>
         </div>
+
+        <button
+          className={`pg-rec-btn ${isCapturing ? 'pg-rec-btn--active' : ''}`}
+          onClick={isCapturing ? stopCapture : startCapture}
+          title={isCapturing ? 'Stop recording and save' : 'Record performance'}
+          aria-label={isCapturing ? 'Stop recording' : 'Record performance'}
+        >
+          <span className="pg-rec-dot" aria-hidden />
+          {isCapturing ? 'Stop' : 'Rec'}
+        </button>
       </div>
 
       {/* ── 3×3 Grid ── */}

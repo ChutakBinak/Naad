@@ -1,4 +1,4 @@
-import { useRef, useCallback, useEffect } from 'react';
+import { useRef, useCallback, useEffect, useState } from 'react';
 import { usePadStore } from '../store/padStore';
 import { usePadSettingsStore, computePlaybackRate } from '../store/padSettingsStore';
 import type { Sample } from '../types';
@@ -8,20 +8,43 @@ interface ActivePad {
   gain:   GainNode;
 }
 
+const MIME_CANDIDATES = [
+  'audio/webm;codecs=opus',
+  'audio/webm',
+  'audio/ogg;codecs=opus',
+];
+function getSupportedMime() {
+  return MIME_CANDIDATES.find((t) => MediaRecorder.isTypeSupported(t)) ?? '';
+}
+
 /**
  * Low-latency pad playback via Web Audio API.
- * Applies per-pad ADSR envelope + pitch/speed on every trigger.
+ *
+ * Audio graph:
+ *   BufferSource → padGain (ADSR) → masterGain → ctx.destination
+ *                                              ↘ captureDestination (when recording)
  */
 export function usePadPlayer() {
-  const audioCtxRef  = useRef<AudioContext | null>(null);
-  const activePads   = useRef<Map<string, ActivePad>>(new Map());
+  const audioCtxRef    = useRef<AudioContext | null>(null);
+  const masterGainRef  = useRef<GainNode | null>(null);
+  const activePads     = useRef<Map<string, ActivePad>>(new Map());
   const { setPadPlaying, clearAllPlaying } = usePadStore();
   const { getSettings }                    = usePadSettingsStore();
 
-  // ── Shared AudioContext ───────────────────────────────────────────────────
+  // ── Capture state ─────────────────────────────────────────────────────────
+  const [isCapturing, setIsCapturing]      = useState(false);
+  const recorderRef   = useRef<MediaRecorder | null>(null);
+  const captureDestRef = useRef<MediaStreamAudioDestinationNode | null>(null);
+  const captureChunks = useRef<Blob[]>([]);
+
+  // ── Shared AudioContext + master gain ─────────────────────────────────────
   const getCtx = useCallback((): AudioContext => {
     if (!audioCtxRef.current || audioCtxRef.current.state === 'closed') {
-      audioCtxRef.current = new AudioContext({ latencyHint: 'interactive' });
+      const ctx    = new AudioContext({ latencyHint: 'interactive' });
+      const master = ctx.createGain();
+      master.connect(ctx.destination);
+      audioCtxRef.current   = ctx;
+      masterGainRef.current = master;
     }
     return audioCtxRef.current;
   }, []);
@@ -31,10 +54,11 @@ export function usePadPlayer() {
     (padId: string, sample: Sample) => {
       const ctx      = getCtx();
       const settings = getSettings(padId);
+      const master   = masterGainRef.current!;
 
       if (ctx.state === 'suspended') ctx.resume();
 
-      // ── Stop existing node for this pad (retrigger) ──
+      // Stop existing node (retrigger)
       const existing = activePads.current.get(padId);
       if (existing) {
         existing.gain.gain.cancelScheduledValues(ctx.currentTime);
@@ -42,7 +66,7 @@ export function usePadPlayer() {
         activePads.current.delete(padId);
       }
 
-      // ── ADSR gain node ───────────────────────────────
+      // ADSR gain node
       const gainNode = ctx.createGain();
       const t0       = ctx.currentTime;
       const { attack, decay, sustain, release } = settings;
@@ -52,21 +76,17 @@ export function usePadPlayer() {
       gainNode.gain.linearRampToValueAtTime(sustain, t0 + attack + decay);
       gainNode.gain.setValueAtTime(sustain,           t0 + attack + decay);
 
-      // Schedule release before sample ends
-      const playbackRate    = computePlaybackRate(settings);
+      const playbackRate     = computePlaybackRate(settings);
       const adjustedDuration = (sample.durationMs / 1000) / playbackRate;
-      const releaseStart    = Math.max(
-        t0 + attack + decay,
-        t0 + adjustedDuration - release,
-      );
+      const releaseStart     = Math.max(t0 + attack + decay, t0 + adjustedDuration - release);
       gainNode.gain.setValueAtTime(sustain, releaseStart);
       gainNode.gain.linearRampToValueAtTime(0, releaseStart + release);
 
-      gainNode.connect(ctx.destination);
+      gainNode.connect(master); // → masterGain → destination (+ optional captureDestination)
 
-      // ── Source node ──────────────────────────────────
+      // Source node
       const sourceNode = ctx.createBufferSource();
-      sourceNode.buffer       = sample.audioBuffer;
+      sourceNode.buffer            = sample.audioBuffer;
       sourceNode.playbackRate.value = playbackRate;
       sourceNode.connect(gainNode);
 
@@ -87,9 +107,9 @@ export function usePadPlayer() {
     (padId: string) => {
       const pad = activePads.current.get(padId);
       if (!pad) return;
-      const ctx      = getCtx();
-      const release  = getSettings(padId).release;
-      const t0       = ctx.currentTime;
+      const ctx     = getCtx();
+      const release = getSettings(padId).release;
+      const t0      = ctx.currentTime;
       pad.gain.gain.cancelScheduledValues(t0);
       pad.gain.gain.setValueAtTime(pad.gain.gain.value, t0);
       pad.gain.gain.linearRampToValueAtTime(0, t0 + release);
@@ -110,10 +130,57 @@ export function usePadPlayer() {
     clearAllPlaying();
   }, [clearAllPlaying]);
 
+  // ── Performance recording ─────────────────────────────────────────────────
+  const startCapture = useCallback(async () => {
+    const ctx    = getCtx();
+    const master = masterGainRef.current!;
+    if (ctx.state === 'suspended') await ctx.resume();
+
+    const dest  = ctx.createMediaStreamDestination();
+    master.connect(dest);
+    captureDestRef.current = dest;
+    captureChunks.current  = [];
+
+    const mime     = getSupportedMime();
+    const recorder = new MediaRecorder(dest.stream, mime ? { mimeType: mime } : undefined);
+
+    recorder.ondataavailable = (e) => {
+      if (e.data.size > 0) captureChunks.current.push(e.data);
+    };
+    recorder.onstop = () => {
+      const blob = new Blob(captureChunks.current, { type: mime || 'audio/webm' });
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      a.href     = url;
+      a.download = `naad-performance-${Date.now()}.webm`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      // Disconnect the capture branch
+      if (captureDestRef.current) {
+        try { master.disconnect(captureDestRef.current); } catch { /* */ }
+        captureDestRef.current = null;
+      }
+    };
+
+    recorder.start(100);
+    recorderRef.current = recorder;
+    setIsCapturing(true);
+  }, [getCtx]);
+
+  const stopCapture = useCallback(() => {
+    if (recorderRef.current && recorderRef.current.state !== 'inactive') {
+      recorderRef.current.stop();
+    }
+    recorderRef.current = null;
+    setIsCapturing(false);
+  }, []);
+
+  // ── Cleanup ───────────────────────────────────────────────────────────────
   useEffect(() => () => {
     stopAll();
+    if (recorderRef.current?.state !== 'inactive') recorderRef.current?.stop();
     audioCtxRef.current?.close();
   }, [stopAll]);
 
-  return { triggerSample, stopPad, stopAll };
+  return { triggerSample, stopPad, stopAll, isCapturing, startCapture, stopCapture };
 }
