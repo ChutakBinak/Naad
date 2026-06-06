@@ -50,6 +50,7 @@ export function App() {
   const streamRef        = useRef<MediaStream | null>(null);
   const blobRef          = useRef<Blob | null>(null);
   const monitorCtxRef    = useRef<AudioContext | null>(null);
+  const monitorAudioRef  = useRef<HTMLAudioElement | null>(null);
   const [analyserNode, setAnalyserNode] = useState<AnalyserNode | null>(null);
 
   // Auto-switch to pads when samples arrive
@@ -58,20 +59,7 @@ export function App() {
   // ── Recording ─────────────────────────────────────────────────────────────
   const startRecording = useCallback(async () => {
     setError(null);
-
-    // ── Create and resume AudioContext as the VERY FIRST await ──────────────
-    // chrome.tabCapture.capture is async; once we cross that await boundary,
-    // Chrome's user-gesture activation token may be expired, and
-    // AudioContext.resume() will silently fail — the captured tab stays muted.
-    // By resuming here (first await, still inside the button-click handler) we
-    // guarantee the context is running before we even request the stream.
-    const monitorCtx = new AudioContext({ latencyHint: 'interactive' });
-    monitorCtxRef.current = monitorCtx;
-    await monitorCtx.resume(); // ← first await: gesture token is still valid
-
     try {
-      // chrome.tabCapture MUTES the captured tab — audio is rerouted through
-      // monitorCtx.destination (already running above) so the user can hear it.
       const stream = await new Promise<MediaStream>((resolve, reject) => {
         chrome.tabCapture.capture({ audio: true, video: false }, (s) => {
           if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
@@ -82,15 +70,27 @@ export function App() {
 
       streamRef.current = stream;
       chunksRef.current = [];
-      const mimeType    = getSupportedMimeType();
-      const recorder    = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+      const mimeType = getSupportedMimeType();
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
 
-      // monitorCtx is already running — wire the captured stream through it
+      // ── Monitor via <audio> element ─────────────────────────────────────
+      // chrome.tabCapture mutes the captured tab. Rather than routing through
+      // AudioContext (which may not resume without user gesture after the async
+      // tabCapture call), we use a plain <audio> element — it plays a MediaStream
+      // directly and has no autoplay restrictions in extension contexts.
+      const monitorAudio = document.createElement('audio');
+      monitorAudio.srcObject = stream;
+      monitorAudio.play().catch((e) => console.warn('[naad] monitor play:', e));
+      monitorAudioRef.current = monitorAudio;
+
+      // ── AudioContext for level meter only (no destination connection) ───
+      const monitorCtx = new AudioContext({ latencyHint: 'interactive' });
+      monitorCtx.resume().catch(() => {}); // best-effort for analyser data flow
       const monitorSrc = monitorCtx.createMediaStreamSource(stream);
       const analyser   = monitorCtx.createAnalyser();
       analyser.fftSize = 256;
-      monitorSrc.connect(monitorCtx.destination); // restore audible output
-      monitorSrc.connect(analyser);               // tap for level meter
+      monitorSrc.connect(analyser); // analyser only — not to destination
+      monitorCtxRef.current = monitorCtx;
       setAnalyserNode(analyser);
 
       recorder.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
@@ -100,6 +100,8 @@ export function App() {
         setAudioBlob(blob);
         stream.getTracks().forEach((t) => t.stop());
         streamRef.current = null;
+        monitorAudioRef.current?.pause();
+        monitorAudioRef.current = null;
         monitorCtxRef.current?.close().catch(() => {});
         monitorCtxRef.current = null;
         setAnalyserNode(null);
@@ -112,9 +114,6 @@ export function App() {
       setElapsed(0);
       timerRef.current = setInterval(() => setElapsed(Date.now() - startTimeRef.current), 50);
     } catch (err) {
-      // Capture failed — close the AudioContext we already created
-      monitorCtx.close().catch(() => {});
-      monitorCtxRef.current = null;
       setError(err instanceof Error ? err.message : 'Failed to capture audio');
     }
   }, [setState, setElapsed, setAudioBlob, setError]);
@@ -144,6 +143,7 @@ export function App() {
   useEffect(() => () => {
     if (timerRef.current) clearInterval(timerRef.current);
     streamRef.current?.getTracks().forEach((t) => t.stop());
+    monitorAudioRef.current?.pause();
     monitorCtxRef.current?.close().catch(() => {});
   }, []);
 

@@ -37,10 +37,25 @@ export function useAudioRecorder() {
   const timerRef         = useRef<ReturnType<typeof setInterval> | null>(null);
   const streamRef        = useRef<MediaStream | null>(null);
   const audioCtxRef      = useRef<AudioContext | null>(null);
+  const monitorAudioRef  = useRef<HTMLAudioElement | null>(null);
   const [analyserNode, setAnalyserNode] = useState<AnalyserNode | null>(null);
+
+  // ── Stop the monitor <audio> element ─────────────────────────────────────
+  const closeMonitorAudio = useCallback(() => {
+    if (monitorAudioRef.current) {
+      const src = monitorAudioRef.current.src;
+      monitorAudioRef.current.pause();
+      monitorAudioRef.current.srcObject = null;
+      monitorAudioRef.current.src = '';
+      monitorAudioRef.current = null;
+      // Revoke any object URL we created for file monitoring
+      if (src && src.startsWith('blob:')) URL.revokeObjectURL(src);
+    }
+  }, []);
 
   // ── Close routing AudioContext ────────────────────────────────────────────
   const closeAudioCtx = useCallback(() => {
+    closeMonitorAudio();
     setAnalyserNode(null);
     if (audioCtxRef.current) {
       audioCtxRef.current.close().catch(() => {});
@@ -144,17 +159,25 @@ export function useAudioRecorder() {
         );
       }
 
-      // ── Route: captured stream → speakers AND recorder ────────────────────
+      // ── Route: captured stream → recorder + analyser ─────────────────────
       const src      = ctx.createMediaStreamSource(new MediaStream(audioTracks));
       const dest     = ctx.createMediaStreamDestination();
       const analyser = ctx.createAnalyser();
       analyser.fftSize = 256;
 
-      src.connect(ctx.destination); // playback — user hears the capture
-      src.connect(dest);             // feed into MediaRecorder
-      src.connect(analyser);         // tap for level meter
+      src.connect(dest);     // feed into MediaRecorder
+      src.connect(analyser); // tap for level meter
+      // NOTE: deliberately NOT connecting src → ctx.destination.
+      // An <audio> element is used for monitoring instead — it bypasses
+      // AudioContext autoplay policy entirely and is guaranteed to work.
 
       setAnalyserNode(analyser);
+
+      // Monitor playback via <audio> element (no AudioContext.resume() needed)
+      const monitorAudio = document.createElement('audio');
+      monitorAudio.srcObject = new MediaStream(audioTracks);
+      monitorAudio.play().catch((e) => console.warn('[naad] monitor play:', e));
+      monitorAudioRef.current = monitorAudio;
 
       // If the user clicks "Stop sharing" in the browser chrome, stop recording
       audioTracks[0].addEventListener('ended', () => stopRef.current(), { once: true });
@@ -210,22 +233,28 @@ export function useAudioRecorder() {
         const arrayBuffer = await file.arrayBuffer();
         const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
 
-        const src     = ctx.createBufferSource();
-        const dest    = ctx.createMediaStreamDestination();
+        const src      = ctx.createBufferSource();
+        const dest     = ctx.createMediaStreamDestination();
         const analyser = ctx.createAnalyser();
         analyser.fftSize = 256;
 
         src.buffer = audioBuffer;
-        src.connect(ctx.destination); // playback — user hears the file
-        src.connect(dest);             // feed into MediaRecorder
-        src.connect(analyser);         // tap for level meter
+        src.connect(dest);     // feed into MediaRecorder
+        src.connect(analyser); // tap for level meter
+        // NOT connecting to ctx.destination — <audio> element handles monitoring
 
         setAnalyserNode(analyser);
 
-        startFromStream(dest.stream);
-        src.start(0);
+        // Monitor via <audio> element — bypasses AudioContext autoplay policy
+        const monitorAudio = document.createElement('audio');
+        monitorAudio.src   = URL.createObjectURL(file);
+        monitorAudio.play().catch((e) => console.warn('[naad] monitor play:', e));
+        monitorAudioRef.current = monitorAudio;
 
-        // Auto-stop when the file finishes
+        startFromStream(dest.stream);
+        src.start(0); // start recording capture in sync with monitor
+
+        // Auto-stop when the recording capture finishes
         src.onended = () => stopRef.current();
       } catch (err) {
         closeAudioCtx();
