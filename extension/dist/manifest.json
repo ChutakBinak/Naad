@@ -1,0 +1,27 @@
+{
+  "manifest_version": 3,
+  "name": "Naad – Audio Sampler",
+  "version": "0.1.0",
+  "description": "Human-guided audio sampling from browser tabs. Mark cue points in real-time to slice audio into samples.",
+  "permissions": [
+    "tabCapture",
+    "storage",
+    "activeTab",
+    "sidePanel"
+  ],
+  "side_panel": {
+    "default_path": "index.html"
+  },
+  "action": {
+    "default_title": "Open Naad Sampler",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "background": {
+    "service_worker": "background/service-worker.js",
+    "type": "module"
+  }
+}
