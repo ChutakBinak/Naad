@@ -250,9 +250,17 @@ export function App() {
 
             <section className="controls">
               {state === 'idle' && (
-                <button className="btn btn--start" onClick={startRecording}>
-                  <span className="btn-icon">▶</span> Start Recording
-                </button>
+                <>
+                  <button className="btn btn--start" onClick={startRecording}>
+                    <span className="btn-icon">▶</span> Start Recording
+                  </button>
+                  <ol className="how-it-works">
+                    <li><span className="hw-step">1</span><span>Click <strong>Start Recording</strong> — Naad captures audio from your active tab</span></li>
+                    <li><span className="hw-step">2</span><span>Listen. Press <kbd>Space</kbd> (or tap <strong>Cue</strong>) each time you want to mark a new sample boundary</span></li>
+                    <li><span className="hw-step">3</span><span>Click <strong>Stop</strong> when you're done, then <strong>Slice</strong> to split into samples</span></li>
+                    <li><span className="hw-step">4</span><span>Play samples on the pad grid, sequence them, tweak ADSR + pitch per pad</span></li>
+                  </ol>
+                </>
               )}
 
               {state === 'recording' && (

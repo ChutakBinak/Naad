@@ -1287,3 +1287,52 @@ kbd {
 
 .ext-auth-form-btns { display: flex; gap: 6px; }
 .ext-auth-form-btns .btn { flex: 1; }
+
+/* ─── How-it-works instruction list (idle state) ────────────────────────── */
+
+.how-it-works {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.how-it-works li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
+.hw-step {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--accent);
+  margin-top: 1px;
+}
+
+.how-it-works strong { color: var(--text); font-weight: 600; }
+
+.how-it-works kbd {
+  display: inline-block;
+  padding: 1px 5px;
+  background: rgba(255,255,255,0.08);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-family: monospace;
+  color: var(--text);
+}
