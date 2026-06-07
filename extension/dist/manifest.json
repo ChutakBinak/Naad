@@ -7,8 +7,16 @@
     "tabCapture",
     "storage",
     "activeTab",
-    "sidePanel"
+    "sidePanel",
+    "identity"
   ],
+  "oauth2": {
+    "client_id": "__EXTENSION_GOOGLE_CLIENT_ID__",
+    "scopes": [
+      "https://www.googleapis.com/auth/userinfo.email",
+      "https://www.googleapis.com/auth/userinfo.profile"
+    ]
+  },
   "side_panel": {
     "default_path": "index.html"
   },
