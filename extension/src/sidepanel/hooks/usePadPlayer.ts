@@ -1,7 +1,84 @@
 import { useRef, useCallback, useEffect, useState } from 'react';
 import { usePadStore } from '../store/padStore';
-import { usePadSettingsStore, computePlaybackRate } from '../store/padSettingsStore';
+import { usePadSettingsStore, computePlaybackRate, type LoopMode } from '../store/padSettingsStore';
 import type { Sample } from '../utils/audioSlicer';
+
+// ── Buffer helpers ────────────────────────────────────────────────────────────
+
+/** Slice an AudioBuffer to [startRatio, endRatio] and return a new buffer. */
+function sliceBuffer(ctx: AudioContext, src: AudioBuffer, startRatio: number, endRatio: number): AudioBuffer {
+  const s0  = Math.floor(startRatio * src.length);
+  const s1  = Math.ceil(endRatio   * src.length);
+  const len = Math.max(1, s1 - s0);
+  const out = ctx.createBuffer(src.numberOfChannels, len, src.sampleRate);
+  for (let ch = 0; ch < src.numberOfChannels; ch++) {
+    out.copyToChannel(src.getChannelData(ch).slice(s0, s1), ch);
+  }
+  return out;
+}
+
+/** Reverse all channels of a buffer and return a new copy. */
+function reverseBuffer(ctx: AudioContext, src: AudioBuffer): AudioBuffer {
+  const out = ctx.createBuffer(src.numberOfChannels, src.length, src.sampleRate);
+  for (let ch = 0; ch < src.numberOfChannels; ch++) {
+    const data = src.getChannelData(ch).slice().reverse();
+    out.copyToChannel(data, ch);
+  }
+  return out;
+}
+
+/** Concatenate two buffers end-to-end (must have same channels + sampleRate). */
+function concatBuffers(ctx: AudioContext, a: AudioBuffer, b: AudioBuffer): AudioBuffer {
+  const len = a.length + b.length;
+  const out = ctx.createBuffer(a.numberOfChannels, len, a.sampleRate);
+  for (let ch = 0; ch < a.numberOfChannels; ch++) {
+    const arr = new Float32Array(len);
+    arr.set(a.getChannelData(ch), 0);
+    arr.set(b.getChannelData(ch), a.length);
+    out.copyToChannel(arr, ch);
+  }
+  return out;
+}
+
+/**
+ * Prepare an AudioBuffer for playback given trim points and loop mode.
+ * Returns { buffer, loopStart, loopEnd, startOffset } ready to pass to a
+ * BufferSourceNode.  The returned buffer may be a newly-allocated copy.
+ */
+function prepareBuffer(
+  ctx: AudioContext,
+  src: AudioBuffer,
+  startRatio: number,
+  endRatio:   number,
+  loopMode:   LoopMode,
+): { buffer: AudioBuffer; loopStart: number; loopEnd: number; startOffset: number } {
+  const sr = Math.min(Math.max(startRatio, 0), 1);
+  const er = Math.min(Math.max(endRatio,   0), 1);
+  const safeEnd = Math.max(sr + 0.001, er); // guard zero-length slice
+
+  switch (loopMode) {
+    case 'forward': {
+      const ls = sr * src.duration;
+      const le = safeEnd * src.duration;
+      return { buffer: src, loopStart: ls, loopEnd: le, startOffset: ls };
+    }
+    case 'reverse': {
+      const sliced   = sliceBuffer(ctx, src, sr, safeEnd);
+      const reversed = reverseBuffer(ctx, sliced);
+      return { buffer: reversed, loopStart: 0, loopEnd: reversed.duration, startOffset: 0 };
+    }
+    case 'ping-pong': {
+      const sliced   = sliceBuffer(ctx, src, sr, safeEnd);
+      const reversed = reverseBuffer(ctx, sliced);
+      const pp       = concatBuffers(ctx, sliced, reversed);
+      return { buffer: pp, loopStart: 0, loopEnd: pp.duration, startOffset: 0 };
+    }
+    default: {
+      // 'off' — use original buffer, start/end via start() offset+duration
+      return { buffer: src, loopStart: 0, loopEnd: src.duration, startOffset: sr * src.duration };
+    }
+  }
+}
 
 interface ActivePad { source: AudioBufferSourceNode; gain: GainNode; }
 
@@ -54,34 +131,73 @@ export function usePadPlayer() {
     const existing = activePads.current.get(padId);
     if (existing) {
       existing.gain.gain.cancelScheduledValues(ctx.currentTime);
-      try { existing.source.stop(); } catch { /* */ }
+      try { existing.source.stop(); } catch { /* already ended */ }
       activePads.current.delete(padId);
     }
 
-    const { attack, decay, sustain, release } = settings;
+    const { attack, decay, sustain, release, startRatio, endRatio, loopMode } = settings;
+    const isLooping = loopMode !== 'off';
+
     const gainNode = ctx.createGain();
     const t0 = ctx.currentTime;
     gainNode.gain.setValueAtTime(0, t0);
-    gainNode.gain.linearRampToValueAtTime(1, t0 + attack);
+    gainNode.gain.linearRampToValueAtTime(1,       t0 + attack);
     gainNode.gain.linearRampToValueAtTime(sustain, t0 + attack + decay);
-    gainNode.gain.setValueAtTime(sustain, t0 + attack + decay);
+    gainNode.gain.setValueAtTime(sustain,           t0 + attack + decay);
 
-    const rate             = computePlaybackRate(settings);
-    const adjustedDuration = (sample.durationMs / 1000) / rate;
-    const releaseStart     = Math.max(t0 + attack + decay, t0 + adjustedDuration - release);
-    gainNode.gain.setValueAtTime(sustain, releaseStart);
-    gainNode.gain.linearRampToValueAtTime(0, releaseStart + release);
+    const playbackRate = computePlaybackRate(settings);
+
+    if (!isLooping) {
+      // Auto-release at end of trimmed region
+      const sliceDuration    = (endRatio - startRatio) * (sample.audioBuffer?.duration ?? sample.durationMs / 1000);
+      const adjustedDuration = sliceDuration / playbackRate;
+      const releaseStart     = Math.max(t0 + attack + decay, t0 + adjustedDuration - release);
+      gainNode.gain.setValueAtTime(sustain, releaseStart);
+      gainNode.gain.linearRampToValueAtTime(0, releaseStart + release);
+    }
+    // For looping modes sustain holds indefinitely; stopPad() triggers the release.
 
     gainNode.connect(master); // → masterGain → destination (+ optional captureDestination)
 
+    // Prepare buffer (trim + loop mode transforms)
+    const { buffer, loopStart, loopEnd, startOffset } = prepareBuffer(
+      ctx, sample.audioBuffer, startRatio, endRatio, loopMode,
+    );
+
     const source = ctx.createBufferSource();
-    source.buffer = sample.audioBuffer;
-    source.playbackRate.value = rate;
+    source.buffer            = buffer;
+    source.playbackRate.value = playbackRate;
     source.connect(gainNode);
+
+    if (isLooping) {
+      source.loop      = true;
+      source.loopStart = loopStart;
+      source.loopEnd   = loopEnd;
+      source.start(t0, startOffset);
+    } else {
+      // Non-looping: play only the trimmed slice
+      const sliceDuration = (endRatio - startRatio) * buffer.duration;
+      source.start(t0, startOffset, sliceDuration / playbackRate);
+    }
+
     source.onended = () => { setPadPlaying(padId, false); activePads.current.delete(padId); };
-    source.start(t0);
     activePads.current.set(padId, { source, gain: gainNode });
     setPadPlaying(padId, true);
+  }, [getCtx, getSettings, setPadPlaying]);
+
+  // ── Stop a single pad (with release) ─────────────────────────────────────
+  const stopPad = useCallback((padId: string) => {
+    const pad = activePads.current.get(padId);
+    if (!pad) return;
+    const ctx     = getCtx();
+    const release = getSettings(padId).release;
+    const t0      = ctx.currentTime;
+    pad.gain.gain.cancelScheduledValues(t0);
+    pad.gain.gain.setValueAtTime(pad.gain.gain.value, t0);
+    pad.gain.gain.linearRampToValueAtTime(0, t0 + release);
+    pad.source.stop(t0 + release + 0.01);
+    activePads.current.delete(padId);
+    setPadPlaying(padId, false);
   }, [getCtx, getSettings, setPadPlaying]);
 
   // ── Stop everything ───────────────────────────────────────────────────────
@@ -144,5 +260,5 @@ export function usePadPlayer() {
     audioCtxRef.current?.close();
   }, [stopAll]);
 
-  return { triggerSample, stopAll, isCapturing, startCapture, stopCapture };
+  return { triggerSample, stopPad, stopAll, isCapturing, startCapture, stopCapture };
 }

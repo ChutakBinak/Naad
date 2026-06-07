@@ -3,15 +3,18 @@ import {
   usePadSettingsStore,
   type PadSettings,
   type PresetFile,
+  type LoopMode,
 } from '../store/padSettingsStore';
+import type { Sample } from '../utils/audioSlicer';
 
 interface PadSettingsProps {
   padId: string;
   padLabel: string;
+  sample?: Sample;
   onClose: () => void;
 }
 
-export function PadSettings({ padId, padLabel, onClose }: PadSettingsProps) {
+export function PadSettings({ padId, padLabel, sample, onClose }: PadSettingsProps) {
   const { getSettings, updateSettings, resetSettings, exportPreset, importPreset } =
     usePadSettingsStore();
 
@@ -75,6 +78,20 @@ export function PadSettings({ padId, padLabel, onClose }: PadSettingsProps) {
           format={fmtSec} onChange={(v) => set({ release: v })} />
       </div>
 
+      {/* ── Trim ── */}
+      <TrimBar
+        startRatio={s.startRatio}
+        endRatio={s.endRatio}
+        durationMs={sample?.durationMs}
+        onChange={(startRatio, endRatio) => set({ startRatio, endRatio })}
+      />
+
+      {/* ── Loop mode ── */}
+      <LoopModeRow
+        loopMode={s.loopMode}
+        onChange={(loopMode) => set({ loopMode })}
+      />
+
       <div className="ps-preset-row">
         <button className="ps-preset-btn" onClick={handleExport}>↓ Preset</button>
         <button className="ps-preset-btn" onClick={() => fileRef.current?.click()}>↑ Load</button>
@@ -105,3 +122,67 @@ function Slider({ label, value, min, max, step, format, onChange }: {
 }
 
 function fmtSec(v: number) { return v < 1 ? `${Math.round(v * 1000)}ms` : `${v.toFixed(2)}s`; }
+
+// ── TrimBar ───────────────────────────────────────────────────────────────────
+
+function TrimBar({ startRatio, endRatio, durationMs, onChange }: {
+  startRatio: number; endRatio: number; durationMs?: number;
+  onChange: (start: number, end: number) => void;
+}) {
+  const dur = (durationMs ?? 0) / 1000;
+  return (
+    <div className="ps-section">
+      <div className="ps-section-label">
+        <span>Trim</span>
+        <span className="ps-trim-range">
+          {fmtSec(startRatio * dur)} → {fmtSec(endRatio * dur)}
+          {dur > 0 && <span className="ps-trim-pct"> ({Math.round((endRatio - startRatio) * 100)}%)</span>}
+        </span>
+      </div>
+      <div className="ps-trim-bar">
+        <div
+          className="ps-trim-region"
+          style={{ left: `${startRatio * 100}%`, width: `${(endRatio - startRatio) * 100}%` }}
+        />
+        <input type="range" className="ps-trim-range-input ps-trim-start"
+          min={0} max={1} step={0.001} value={startRatio}
+          onChange={(e) => {
+            const v = Number(e.target.value);
+            onChange(Math.min(v, endRatio - 0.001), endRatio);
+          }} />
+        <input type="range" className="ps-trim-range-input ps-trim-end"
+          min={0} max={1} step={0.001} value={endRatio}
+          onChange={(e) => {
+            const v = Number(e.target.value);
+            onChange(startRatio, Math.max(v, startRatio + 0.001));
+          }} />
+      </div>
+    </div>
+  );
+}
+
+// ── LoopModeRow ───────────────────────────────────────────────────────────────
+
+const LOOP_MODES: { value: LoopMode; label: string; title: string }[] = [
+  { value: 'off',       label: '—', title: 'No loop'      },
+  { value: 'forward',   label: '→', title: 'Forward loop'  },
+  { value: 'reverse',   label: '←', title: 'Reverse loop'  },
+  { value: 'ping-pong', label: '↔', title: 'Ping-pong loop' },
+];
+
+function LoopModeRow({ loopMode, onChange }: { loopMode: LoopMode; onChange: (m: LoopMode) => void }) {
+  return (
+    <div className="ps-section">
+      <div className="ps-section-label"><span>Loop</span></div>
+      <div className="ps-loop-row">
+        {LOOP_MODES.map(({ value, label, title }) => (
+          <button key={value}
+            className={`ps-loop-btn ${loopMode === value ? 'ps-loop-btn--active' : ''}`}
+            title={title} onClick={() => onChange(value)}>
+            {label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}

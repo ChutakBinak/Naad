@@ -1,16 +1,22 @@
 import { create } from 'zustand';
 
+export type LoopMode = 'off' | 'forward' | 'reverse' | 'ping-pong';
+
 export interface PadSettings {
-  pitch: number;    // -24 to +24 semitones
-  speed: number;    // 0.25 to 4.0
-  attack: number;   // seconds
-  decay: number;    // seconds
-  sustain: number;  // 0 to 1
-  release: number;  // seconds
+  pitch:      number;   // -24 to +24 semitones
+  speed:      number;   // 0.25 to 4.0
+  attack:     number;   // seconds
+  decay:      number;   // seconds
+  sustain:    number;   // 0 to 1
+  release:    number;   // seconds
+  startRatio: number;   // 0.0–1.0 sample start point
+  endRatio:   number;   // 0.0–1.0 sample end point
+  loopMode:   LoopMode;
 }
 
 export const DEFAULT_SETTINGS: PadSettings = {
   pitch: 0, speed: 1.0, attack: 0.005, decay: 0.08, sustain: 0.85, release: 0.12,
+  startRatio: 0, endRatio: 1, loopMode: 'off',
 };
 
 export function computePlaybackRate(s: PadSettings): number {

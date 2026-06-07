@@ -1,5 +1,8 @@
 import { create } from 'zustand';
 
+/** Which looping behaviour to apply to a pad. */
+export type LoopMode = 'off' | 'forward' | 'reverse' | 'ping-pong';
+
 export interface PadSettings {
   /** Semitone shift: -24 to +24. Affects playbackRate via 2^(n/12). */
   pitch: number;
@@ -13,15 +16,24 @@ export interface PadSettings {
   sustain: number;
   /** Release time in seconds: 0.001 to 4.0. */
   release: number;
+  /** Sample start point as a fraction of the total buffer (0.0–1.0). */
+  startRatio: number;
+  /** Sample end point as a fraction of the total buffer (0.0–1.0). */
+  endRatio: number;
+  /** Looping mode applied during playback. */
+  loopMode: LoopMode;
 }
 
 export const DEFAULT_SETTINGS: PadSettings = {
-  pitch:   0,
-  speed:   1.0,
-  attack:  0.005,
-  decay:   0.08,
-  sustain: 0.85,
-  release: 0.12,
+  pitch:      0,
+  speed:      1.0,
+  attack:     0.005,
+  decay:      0.08,
+  sustain:    0.85,
+  release:    0.12,
+  startRatio: 0,
+  endRatio:   1,
+  loopMode:   'off',
 };
 
 /** Compute the combined playbackRate from pitch + speed settings. */

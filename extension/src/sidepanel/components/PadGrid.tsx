@@ -158,6 +158,7 @@ export function PadGrid({ samples, onNewRecording }: PadGridProps) {
         <PadSettings
           padId={selectedPad.id}
           padLabel={selectedPad.sample?.label ?? `Pad ${selectedPad.number}`}
+          sample={selectedPad.sample ?? undefined}
           onClose={() => setSelectedPad(null)}
         />
       ) : (
