@@ -17,7 +17,10 @@ function scheduleClick(ctx: AudioContext, time: number, down: boolean) {
 }
 
 export function useSequencer(samples: Sample[]) {
-  const store = useSequencerStore();
+  // NOTE: do NOT call useSequencerStore() here without a selector — subscribing
+  // to the whole store makes every callback recreate on any store update, which
+  // triggers the cleanup effect and closes the AudioContext on every click.
+  // Read state imperatively via useSequencerStore.getState() inside callbacks.
   const { getSettings } = usePadSettingsStore();
 
   const ctxRef   = useRef<AudioContext | null>(null);
@@ -81,17 +84,19 @@ export function useSequencer(samples: Sample[]) {
     schedRef.current = 0; dispRef.current = 0;
     nextRef.current = ctx.currentTime + 0.05;
     startRef.current = nextRef.current;
-    store.setTransportState(recording ? 'recording' : 'playing');
-    store.setCurrentStep(0);
+    useSequencerStore.getState().setTransportState(recording ? 'recording' : 'playing');
+    useSequencerStore.getState().setCurrentStep(0);
     timerRef.current = setInterval(runScheduler, SCHED_INTERVAL);
     rafRef.current = requestAnimationFrame(rafLoop);
-  }, [getCtx, store, runScheduler, rafLoop]);
+  }, [getCtx, runScheduler, rafLoop]);
 
   const stop = useCallback(() => {
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
     if (rafRef.current)   cancelAnimationFrame(rafRef.current);
-    store.setTransportState('stopped'); store.setCurrentStep(-1); dispRef.current = -1;
-  }, [store]);
+    useSequencerStore.getState().setTransportState('stopped');
+    useSequencerStore.getState().setCurrentStep(-1);
+    dispRef.current = -1;
+  }, []); // empty deps — stable reference; no store subscription needed
 
   const recordPadHit = useCallback((pi: number) => {
     const st = useSequencerStore.getState();
@@ -100,8 +105,8 @@ export function useSequencer(samples: Sample[]) {
     const elapsed = ctx.currentTime - startRef.current;
     let step = st.quantize ? Math.round(elapsed / dur) : Math.floor(elapsed / dur);
     step = ((step % total) + total) % total;
-    store.setStep(pi, step, true);
-  }, [getCtx, store]);
+    useSequencerStore.getState().setStep(pi, step, true);
+  }, [getCtx]);
 
   const triggerNow = useCallback((pi: number) => {
     const s = samples[pi]; if (!s) return;
@@ -148,6 +153,9 @@ export function useSequencer(samples: Sample[]) {
     return audioBufferToWav(rendered);
   }, [getSettings, samples]);
 
+  // Cleanup on unmount only — stop is now stable (empty deps), so this
+  // effect runs its cleanup ONLY when the Sequencer component unmounts,
+  // not on every store update.
   useEffect(() => () => { stop(); ctxRef.current?.close(); }, [stop]);
 
   return { play, stop, recordPadHit, triggerNow, exportWav };

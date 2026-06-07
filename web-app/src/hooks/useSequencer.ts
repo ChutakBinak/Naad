@@ -22,7 +22,10 @@ function scheduleClick(ctx: AudioContext, time: number, isDownbeat: boolean) {
 }
 
 export function useSequencer(samples: Sample[]) {
-  const store           = useSequencerStore();
+  // NOTE: do NOT call useSequencerStore() here without a selector — subscribing
+  // to the whole store makes every callback recreate on any store update, which
+  // triggers the cleanup effect and closes the AudioContext on every click.
+  // Read state imperatively via useSequencerStore.getState() inside callbacks.
   const { getSettings } = usePadSettingsStore();
 
   const ctxRef            = useRef<AudioContext | null>(null);
@@ -128,13 +131,13 @@ export function useSequencer(samples: Sample[]) {
       nextTimeRef.current    = ctx.currentTime + 0.05;
       startTimeRef.current   = nextTimeRef.current;
 
-      store.setTransportState(recording ? 'recording' : 'playing');
-      store.setCurrentStep(0);
+      useSequencerStore.getState().setTransportState(recording ? 'recording' : 'playing');
+      useSequencerStore.getState().setCurrentStep(0);
 
       schedulerTimerRef.current = setInterval(runScheduler, SCHED_INTERVAL);
       rafRef.current = requestAnimationFrame(rafLoop);
     },
-    [getCtx, store, runScheduler, rafLoop],
+    [getCtx, runScheduler, rafLoop],
   );
 
   // ── Transport: stop ───────────────────────────────────────────────────────
@@ -148,10 +151,10 @@ export function useSequencer(samples: Sample[]) {
     if (rafRef.current) {
       cancelAnimationFrame(rafRef.current);
     }
-    store.setTransportState('stopped');
-    store.setCurrentStep(-1);
+    useSequencerStore.getState().setTransportState('stopped');
+    useSequencerStore.getState().setCurrentStep(-1);
     displayStepRef.current = -1;
-  }, [store]);
+  }, []); // empty deps — stable reference; no store subscription needed
   useSequencer_stop = stop;
 
   // ── Record: quantize pad hit → step grid ─────────────────────────────────
@@ -176,9 +179,9 @@ export function useSequencer(samples: Sample[]) {
       }
       step = ((step % total) + total) % total;
 
-      store.setStep(padIndex, step, true);
+      useSequencerStore.getState().setStep(padIndex, step, true);
     },
-    [getCtx, store],
+    [getCtx],
   );
 
   // ── Trigger sample immediately (for live recording feel) ──────────────────
