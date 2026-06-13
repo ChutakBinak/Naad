@@ -36,9 +36,9 @@ export function App() {
     setSamples, setSlicing, setSliceProgress, setSliceError, clearSamples,
   } = useSamplesStore();
 
-  // NOTE: do NOT subscribe to these stores here — they are only needed in
-  // handleNewRecording (a callback), not for rendering. Use .getState() inside
-  // the callback so App never re-renders due to pad/seq store updates.
+  const { clearAllPlaying } = usePadStore();
+  const { clearAll: clearAllSettings } = usePadSettingsStore();
+  const { clearAll: clearSequencer } = useSequencerStore();
 
   const { isHydrating } = useDBPersistence();
 
@@ -180,14 +180,14 @@ export function App() {
   // ── Reset ─────────────────────────────────────────────────────────────────
   const handleNewRecording = useCallback(() => {
     blobRef.current = null;
-    usePadStore.getState().clearAllPlaying();
-    usePadSettingsStore.getState().clearAll();
-    useSequencerStore.getState().clearAll();
+    clearAllPlaying();
+    clearAllSettings();
+    clearSequencer();
     clearSamples();
     resetRecording();
     setView('pads');
     clearAllDB().catch((e) => console.warn('[naad-ext] clearAllDB:', e));
-  }, [clearSamples, resetRecording]);
+  }, [clearAllPlaying, clearAllSettings, clearSequencer, clearSamples, resetRecording]);
 
   const hasSamples = samples.length > 0;
 
@@ -214,9 +214,9 @@ export function App() {
 
         {hasSamples ? (
           <div className="tab-bar">
-            <button className={`tab ${view === 'pads'    ? 'tab--active' : ''}`} onClick={() => setView('pads')}>Pads</button>
-            <button className={`tab ${view === 'samples' ? 'tab--active' : ''}`} onClick={() => setView('samples')}>Samples</button>
-            <button className={`tab ${view === 'seq' ? 'tab--active' : ''}`} onClick={() => setView('seq')}>Seq</button>
+            <button className={`tab ${view === 'pads'    ? 'tab--active' : ''}`} onClick={() => setView('pads')}>▦</button>
+            <button className={`tab ${view === 'samples' ? 'tab--active' : ''}`} onClick={() => setView('samples')}>≋</button>
+            <button className={`tab ${view === 'seq' ? 'tab--active' : ''}`} onClick={() => setView('seq')}>⊞</button>
           </div>
         ) : (
           <span className="phase-badge">phase 5</span>
