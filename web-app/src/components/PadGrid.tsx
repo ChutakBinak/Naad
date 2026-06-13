@@ -47,6 +47,12 @@ export function PadGrid({ samples }: PadGridProps) {
     }));
   }, [banks, safeBank]);
 
+  // Every pad id across every bank — used for "copy to all pads".
+  const allPadIds = useMemo<string[]>(
+    () => banks.flatMap((_, bi) => Array.from({ length: 9 }, (_, i) => `bank${bi}-pad${i}`)),
+    [banks],
+  );
+
   // Deselect pad when bank changes
   useEffect(() => { setSelectedPad(null); }, [safeBank]);
 
@@ -136,6 +142,7 @@ export function PadGrid({ samples }: PadGridProps) {
           padId={selectedPad.id}
           padLabel={selectedPad.sample?.label ?? `Pad ${selectedPad.number}`}
           sample={selectedPad.sample ?? undefined}
+          allPadIds={allPadIds}
           onClose={() => setSelectedPad(null)}
         />
       )}

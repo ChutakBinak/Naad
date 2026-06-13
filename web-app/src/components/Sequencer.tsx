@@ -2,23 +2,25 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Transport } from './Transport';
 import { StepGrid } from './StepGrid';
 import { useSequencerStore, type ProjectData } from '../store/sequencerStore';
-import { useSequencer } from '../hooks/useSequencer';
+import type { useSequencer } from '../hooks/useSequencer';
 import type { Sample } from '../types';
 import { formatTime } from '../utils/time';
 
 interface SequencerProps {
   samples: Sample[];
+  /** Sequencer transport, lifted to App.tsx so it survives tab switches. */
+  sequencer: ReturnType<typeof useSequencer>;
 }
 
 const PAD_LABELS = ['Q','W','E','A','S','D','Z','X','C'];
 
-export function Sequencer({ samples }: SequencerProps) {
+export function Sequencer({ samples, sequencer }: SequencerProps) {
   const {
     transportState, currentStep, bars,
     clearAll, exportProject, importProject,
   } = useSequencerStore();
 
-  const { play, stop, recordPadHit, triggerNow, exportWav } = useSequencer(samples);
+  const { play, stop, recordPadHit, triggerNow, exportWav } = sequencer;
 
   const [isExporting, setIsExporting]   = useState(false);
   const [exportError,  setExportError]  = useState<string | null>(null);

@@ -52,6 +52,8 @@ interface PadSettingsStore {
   getSettings:    (padId: string) => PadSettings;
   updateSettings: (padId: string, patch: Partial<PadSettings>) => void;
   resetSettings:  (padId: string) => void;
+  /** Copy one pad's settings onto every pad in targetPadIds. */
+  applyToAll:     (sourcePadId: string, targetPadIds: string[]) => void;
   clearAll:       () => void;
 
   /** Export all pad settings to a JSON Blob. */
@@ -78,6 +80,16 @@ export const usePadSettingsStore = create<PadSettingsStore>((set, get) => ({
     set((s) => {
       const next = new Map(s.settings);
       next.set(padId, { ...DEFAULT_SETTINGS });
+      return { settings: next };
+    }),
+
+  applyToAll: (sourcePadId, targetPadIds) =>
+    set((s) => {
+      const next = new Map(s.settings);
+      const src  = next.get(sourcePadId) ?? { ...DEFAULT_SETTINGS };
+      targetPadIds.forEach((id) => {
+        if (id !== sourcePadId) next.set(id, { ...src });
+      });
       return { settings: next };
     }),
 

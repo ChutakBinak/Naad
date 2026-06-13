@@ -1,4 +1,4 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   usePadSettingsStore,
   type PadSettings,
@@ -11,16 +11,26 @@ interface PadSettingsProps {
   padId: string;
   padLabel: string;
   sample?: Sample;
+  /** Every pad id across all banks — used for "copy to all pads". */
+  allPadIds?: string[];
   onClose: () => void;
 }
 
-export function PadSettings({ padId, padLabel, sample, onClose }: PadSettingsProps) {
-  const { getSettings, updateSettings, resetSettings, exportPreset, importPreset } =
+export function PadSettings({ padId, padLabel, sample, allPadIds, onClose }: PadSettingsProps) {
+  const { getSettings, updateSettings, resetSettings, applyToAll, exportPreset, importPreset } =
     usePadSettingsStore();
+  const [copied, setCopied] = useState(false);
 
   const s       = getSettings(padId);
   const set     = useCallback((p: Partial<PadSettings>) => updateSettings(padId, p), [padId, updateSettings]);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  const handleApplyToAll = useCallback(() => {
+    if (!allPadIds || allPadIds.length === 0) return;
+    applyToAll(padId, allPadIds);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  }, [allPadIds, applyToAll, padId]);
 
   const handleExport = () => {
     const blob = exportPreset();
@@ -83,6 +93,7 @@ export function PadSettings({ padId, padLabel, sample, onClose }: PadSettingsPro
         startRatio={s.startRatio}
         endRatio={s.endRatio}
         durationMs={sample?.durationMs}
+        audioBuffer={sample?.audioBuffer}
         onChange={(startRatio, endRatio) => set({ startRatio, endRatio })}
       />
 
@@ -93,6 +104,14 @@ export function PadSettings({ padId, padLabel, sample, onClose }: PadSettingsPro
       />
 
       <div className="ps-preset-row">
+        <button
+          className="ps-preset-btn ps-preset-btn--accent"
+          onClick={handleApplyToAll}
+          disabled={!allPadIds || allPadIds.length <= 1}
+          title="Apply this pad's pitch, speed, ADSR, trim and loop settings to every pad"
+        >
+          {copied ? '✓ Copied' : '⇉ Copy to All'}
+        </button>
         <button className="ps-preset-btn" onClick={handleExport}>↓ Preset</button>
         <button className="ps-preset-btn" onClick={() => fileRef.current?.click()}>↑ Load</button>
         <input ref={fileRef} type="file" accept=".json" style={{ display: 'none' }} onChange={handleImport} />
@@ -125,8 +144,50 @@ function fmtSec(v: number) { return v < 1 ? `${Math.round(v * 1000)}ms` : `${v.t
 
 // ── TrimBar ───────────────────────────────────────────────────────────────────
 
-function TrimBar({ startRatio, endRatio, durationMs, onChange }: {
-  startRatio: number; endRatio: number; durationMs?: number;
+/** Draws a min/max amplitude waveform of the buffer onto a canvas. */
+function WaveformCanvas({ audioBuffer }: { audioBuffer?: AudioBuffer }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const { width, height } = canvas;
+    ctx.clearRect(0, 0, width, height);
+
+    if (!audioBuffer) return;
+
+    const data = audioBuffer.getChannelData(0);
+    const step = Math.max(1, Math.floor(data.length / width));
+    const mid  = height / 2;
+
+    const accent = getComputedStyle(canvas).getPropertyValue('--accent').trim() || '#7c8cff';
+    ctx.fillStyle = accent;
+    ctx.globalAlpha = 0.55;
+
+    for (let x = 0; x < width; x++) {
+      let min = 1, max = -1;
+      const start = x * step;
+      const end   = Math.min(start + step, data.length);
+      for (let i = start; i < end; i++) {
+        const v = data[i];
+        if (v < min) min = v;
+        if (v > max) max = v;
+      }
+      if (min > max) { min = 0; max = 0; }
+      const y1 = mid + min * mid;
+      const y2 = mid + max * mid;
+      ctx.fillRect(x, y1, 1, Math.max(1, y2 - y1));
+    }
+  }, [audioBuffer]);
+
+  return <canvas ref={canvasRef} className="ps-trim-waveform" width={300} height={28} />;
+}
+
+function TrimBar({ startRatio, endRatio, durationMs, audioBuffer, onChange }: {
+  startRatio: number; endRatio: number; durationMs?: number; audioBuffer?: AudioBuffer;
   onChange: (start: number, end: number) => void;
 }) {
   const dur = (durationMs ?? 0) / 1000;
@@ -140,6 +201,7 @@ function TrimBar({ startRatio, endRatio, durationMs, onChange }: {
         </span>
       </div>
       <div className="ps-trim-bar">
+        <WaveformCanvas audioBuffer={audioBuffer} />
         <div
           className="ps-trim-region"
           style={{ left: `${startRatio * 100}%`, width: `${(endRatio - startRatio) * 100}%` }}

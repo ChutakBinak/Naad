@@ -1,20 +1,24 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSequencerStore } from '../store/sequencerStore';
-import { useSequencer } from '../hooks/useSequencer';
+import type { useSequencer } from '../hooks/useSequencer';
 import type { Sample } from '../utils/audioSlicer';
 
 const PAD_LABELS = ['Q','W','E','A','S','D','Z','X','C'];
 
-interface SequencerProps { samples: Sample[]; }
+interface SequencerProps {
+  samples: Sample[];
+  /** Sequencer transport, lifted to App.tsx so it survives tab switches. */
+  sequencer: ReturnType<typeof useSequencer>;
+}
 
-export function Sequencer({ samples }: SequencerProps) {
+export function Sequencer({ samples, sequencer }: SequencerProps) {
   const {
     bpm, bars, isLooping, metronomeOn, quantize, transportState, currentStep, steps,
     setBpm, setBars, setLooping, setMetronome, setQuantize,
     toggleStep, clearAll, exportProject, importProject,
   } = useSequencerStore();
 
-  const { play, stop, recordPadHit, triggerNow, exportWav } = useSequencer(samples);
+  const { play, stop, recordPadHit, triggerNow, exportWav } = sequencer;
 
   const [isExporting, setIsExporting] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);

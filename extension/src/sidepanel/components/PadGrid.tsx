@@ -45,6 +45,12 @@ export function PadGrid({ samples, onNewRecording }: PadGridProps) {
     }));
   }, [banks, safeBank]);
 
+  // Every pad id across every bank — used for "copy to all pads".
+  const allPadIds = useMemo<string[]>(
+    () => banks.flatMap((_, bi) => Array.from({ length: 9 }, (_, i) => `bank${bi}-pad${i}`)),
+    [banks],
+  );
+
   const handleTrigger = useCallback((pad: PadItem) => {
     if (pad.sample) triggerSample(pad.id, pad.sample);
   }, [triggerSample]);
@@ -159,6 +165,7 @@ export function PadGrid({ samples, onNewRecording }: PadGridProps) {
           padId={selectedPad.id}
           padLabel={selectedPad.sample?.label ?? `Pad ${selectedPad.number}`}
           sample={selectedPad.sample ?? undefined}
+          allPadIds={allPadIds}
           onClose={() => setSelectedPad(null)}
         />
       ) : (
